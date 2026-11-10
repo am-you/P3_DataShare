@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: DataShare API
   version: 0.1.0
-  description: Contrat d'interface entre le front Vue et le back Spring Boot du prototype DataShare.
+  description: API REST de DataShare, appelée par le front Vue.
 servers:
   - url: http://localhost:8080
 tags:
