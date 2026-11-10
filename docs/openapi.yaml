@@ -1,0 +1,398 @@
+openapi: 3.0.3
+info:
+  title: DataShare API
+  version: 0.1.0
+  description: Contrat d'interface entre le front Vue et le back Spring Boot du prototype DataShare.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: auth
+  - name: files
+  - name: download
+
+paths:
+  # Am.Yo : US03, création de compte publique
+  /api/auth/register:
+    post:
+      tags: [auth]
+      summary: Créer un compte
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Compte créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email déjà utilisé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Am.Yo : US04, connexion qui renvoie le JWT
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Se connecter
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Connexion réussie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Email ou mot de passe incorrect
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/files:
+    # Am.Yo : US01, dépôt d'un fichier par un utilisateur connecté
+    post:
+      tags: [files]
+      summary: Téléverser un fichier
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 1 Go maximum, extensions exécutables refusées
+                password:
+                  type: string
+                  minLength: 6
+                  description: Optionnel. Protège le téléchargement.
+                expirationDays:
+                  type: integer
+                  minimum: 1
+                  maximum: 7
+                  default: 7
+                tags:
+                  type: array
+                  description: Optionnel (US08)
+                  items:
+                    type: string
+                    maxLength: 30
+      responses:
+        '201':
+          description: Fichier déposé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Fichier de plus de 1 Go
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: Extension interdite
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    # Am.Yo : US05, historique des fichiers du propriétaire seulement
+    get:
+      tags: [files]
+      summary: Lister mes fichiers
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all, active, expired]
+            default: all
+      responses:
+        '200':
+          description: Fichiers de l'utilisateur connecté, du plus récent au plus ancien
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FileSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Am.Yo : US06, suppression réservée au propriétaire
+  /api/files/{id}:
+    delete:
+      tags: [files]
+      summary: Supprimer un de mes fichiers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Fichier et métadonnées supprimés
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Fichier inconnu ou appartenant à un autre utilisateur
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Am.Yo : US02, lien public, métadonnées puis téléchargement
+  /api/download/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 32
+    get:
+      tags: [download]
+      summary: Voir les informations d'un fichier partagé
+      security: []
+      responses:
+        '200':
+          description: Métadonnées visibles avant téléchargement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadInfo'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Expired'
+    post:
+      tags: [download]
+      summary: Télécharger le fichier
+      description: Le mot de passe passe dans le corps, jamais dans l'URL.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownloadRequest'
+      responses:
+        '200':
+          description: Contenu du fichier
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="rapport.pdf"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Mot de passe manquant ou incorrect
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Expired'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Données invalides
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: JWT absent, invalide ou expiré
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Lien invalide
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Expired:
+      description: Lien expiré
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        expiresIn:
+          type: integer
+          description: Durée de validité en secondes
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        createdAt:
+          type: string
+          format: date-time
+
+    UploadResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        downloadUrl:
+          type: string
+          example: http://localhost:5173/d/3q2Ff8kQm1xYzA7bC9dE0fG4hJ6kL8nP
+        expiresAt:
+          type: string
+          format: date-time
+
+    FileSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        mimeType:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED]
+        protected:
+          type: boolean
+        downloadUrl:
+          type: string
+          nullable: true
+          description: Null quand le fichier a expiré
+        tags:
+          type: array
+          items:
+            type: string
+
+    DownloadInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        mimeType:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        protected:
+          type: boolean
+
+    DownloadRequest:
+      type: object
+      properties:
+        password:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        status:
+          type: integer
+        error:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+security:
+  - bearerAuth: []

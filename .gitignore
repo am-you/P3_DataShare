@@ -1,0 +1,8 @@
+# Am.Yo : secrets, fichiers déposés et artefacts de build, jamais versionnés
+.env
+data/
+node_modules/
+target/
+dist/
+coverage/
+.DS_Store
