@@ -4,3 +4,12 @@ import axios from 'axios'
 export const api = axios.create({
   baseURL: '/api',
 })
+
+// Am.Yo : ajoute le Bearer si une session existe
+api.interceptors.request.use((config) => {
+  const token = sessionStorage.getItem('datashare_token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
